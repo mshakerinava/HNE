@@ -7,6 +7,29 @@ node_file, link_file, label_file = 'node.dat', 'link.dat', 'label.dat'
 info_file, meta_file = 'info.dat', 'meta.dat'
 
 
+def tce_convert(dataset):
+
+    ori_data_folder = f'{data_folder}/{dataset}'
+    model_data_folder = f'{model_folder}/TCE/data/{dataset}'
+
+    print(f'TCE: converting {dataset}\'s node file!')
+    new_node_file = open(f'{model_data_folder}/{node_file}','w')
+    with open(f'{ori_data_folder}/{node_file}','r') as original_node_file:
+        for line in original_node_file:
+            line = line[:-1].split('\t')
+            new_node_file.write(f'{line[0]} {line[2]}\n')    
+    new_node_file.close()
+
+    print(f'TCE: converting {dataset}\'s link file!')
+    new_link_file = open(f'{model_data_folder}/{link_file}','w') 
+    new_link_file.write(f'{triplet_count}\n')
+    with open(f'{ori_data_folder}/{link_file}','r') as original_link_file:
+        for line in original_link_file:
+            left, right, ltype, weight = line[:-1].split('\t')
+            new_link_file.write(f'{left} {right} {ltype}\n')
+    new_link_file.close()    
+
+
 def metapath2vec_esim_convert(dataset):
     
     ori_data_folder = f'{data_folder}/{dataset}'
