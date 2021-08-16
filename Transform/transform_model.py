@@ -21,8 +21,7 @@ def tce_convert(dataset):
     new_node_file.close()
 
     print(f'TCE: converting {dataset}\'s link file!')
-    new_link_file = open(f'{model_data_folder}/{link_file}','w') 
-    new_link_file.write(f'{triplet_count}\n')
+    new_link_file = open(f'{model_data_folder}/{link_file}','w')
     with open(f'{ori_data_folder}/{link_file}','r') as original_link_file:
         for line in original_link_file:
             left, right, ltype, weight = line[:-1].split('\t')
