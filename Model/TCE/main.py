@@ -108,20 +108,24 @@ NODE_PATH = os.path.join(DATASET_PATH, 'node.dat')
 LINK_PATH = os.path.join(DATASET_PATH, 'link.dat')
 
 node_id_to_type = {}
-with open(NODE_PATH, 'r') as f:
-    for line in f.readlines():
-        node_id, node_type = [int(x) for x in line.strip().split()]
-        node_id_to_type[node_id] = node_type
+with tqdm.tqdm(desc='reading %s' % NODE_PATH, total=os.path.getsize(NODE_PATH)) as pbar:
+    with open(NODE_PATH, 'r') as f:
+        for line in f:
+            pbar.update(len(l))
+            node_id, node_type = [int(x) for x in line.strip().split()]
+            node_id_to_type[node_id] = node_type
 
 links = []
-with open(LINK_PATH, 'r') as f:
-    for line in f.readlines():
-        node_id_1, node_id_2, link_type = [int(x) for x in line.strip().split()]
-        node_type_1 = node_id_to_type[node_id_1]
-        node_type_2 = node_id_to_type[node_id_2]
-        if node_type_1 > node_type_2:
-            node_id_1, node_id_2 = node_id_2, node_id_1
-        links.append([link_type, node_id_1, node_id_2])
+with tqdm.tqdm(desc='reading %s' % LINK_PATH, total=os.path.getsize(LINK_PATH)) as pbar:
+    with open(LINK_PATH, 'r') as f:
+        for line in f:
+            pbar.update(len(l))
+            node_id_1, node_id_2, link_type = [int(x) for x in line.strip().split()]
+            node_type_1 = node_id_to_type[node_id_1]
+            node_type_2 = node_id_to_type[node_id_2]
+            if node_type_1 > node_type_2:
+                node_id_1, node_id_2 = node_id_2, node_id_1
+            links.append([link_type, node_id_1, node_id_2])
 
 links = np.array(links, dtype=int)
 
@@ -133,7 +137,7 @@ assert args.batch_size <= num_links
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Device:', DEVICE)
 
-W = torch.randn(num_nodes, args.embedding_dim, device=DEVICE, requires_grad=True)
+W = torch.randn(num_nodes, args.embedding_dim, device=DEVICE, requires_grad=True) # todo: use embed
 
 opt = optim.Adam([W], lr=args.learning_rate, weight_decay=args.weight_decay)
 scheduler = optim.lr_scheduler.StepLR(opt, step_size=9999, gamma=0.5, verbose=False) # does nothing for now
