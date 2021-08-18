@@ -1,16 +1,20 @@
 import os
+import io
 import sys
 import json
 import math
 import time
-import pickle
+import random
 import argparse
+import subprocess
+from datetime import datetime
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, TensorDataset
+from tqdm import tqdm
 from utils import hash_args
 
 
@@ -129,9 +133,9 @@ assert args.batch_size <= num_links
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Device:', DEVICE)
 
-W = torch.randn(num_nodes, args.embedding_dim, device=DEVICE)
+W = torch.randn(num_nodes, args.embedding_dim, device=DEVICE, requires_grad=True)
 
-opt = optim.Adam(W, lr=args.learning_rate, weight_decay=args.weight_decay)
+opt = optim.Adam([W], lr=args.learning_rate, weight_decay=args.weight_decay)
 scheduler = optim.lr_scheduler.StepLR(opt, step_size=9999, gamma=0.5, verbose=False) # does nothing for now
 
 #----------- loss function -----------#
@@ -163,7 +167,7 @@ def loss_fn(enc, x_list, barrier_type, hinge_thresh, cosine_sim=False, conformal
             D_list = [cdist_mean(h, h, p=2) for h in h_list]
             # D_list = [D / torch.linalg.norm(D.view(-1)) for D in D_list] # normalize distances
 
-        L_equiv = torch.zeros(num_actions, num_actions)
+        L_equiv = torch.zeros(num_actions, num_actions, device=DEVICE)
         for i in range(num_actions):
             for j in range(i + 1, num_actions):
                 L_equiv[i, j] = torch.mean((D_list[i] - D_list[j]) ** 2)
@@ -175,7 +179,7 @@ def loss_fn(enc, x_list, barrier_type, hinge_thresh, cosine_sim=False, conformal
     #-- barrier loss --#
     z_all = torch.cat(z_list, dim=0)
     D_all = cdist_mean(z_all, z_all, p=2)
-    mask = torch.eye(D_all.shape[0], dtype=torch.bool)
+    mask = torch.eye(D_all.shape[0], dtype=torch.bool, device=DEVICE)
 
     use_hinge_loss = (hinge_thresh is not None)
     if not use_hinge_loss:
@@ -194,7 +198,7 @@ def loss_fn(enc, x_list, barrier_type, hinge_thresh, cosine_sim=False, conformal
         assert False, 'Unknown `barrier_type`'
 
     if use_hinge_loss:
-        loss_barrier = torch.mean(torch.maximum(torch.zeros(1, device=device), B_all - B_min))
+        loss_barrier = torch.mean(torch.maximum(torch.zeros(1, device=DEVICE), B_all - B_min))
     else:
         loss_barrier = torch.mean(B_all) # TODO: improve?
 
@@ -219,7 +223,7 @@ avg_loss_list = []
 avg_loss_equiv_list = []
 avg_loss_barrier_list = []
 
-for t in args.num_epochs:
+for t in range(args.num_epochs):
     np.random.shuffle(links)
     loss_list = []
     loss_equiv_list = []
@@ -230,7 +234,7 @@ for t in args.num_epochs:
         range(0, num_links - args.batch_size + 1, args.batch_size),
         desc='Loss: None | Loss Equiv: None | Loss Barrier: None | L2 Weights: %12g | L2 Grads: 0' % (get_weights_norm(W, norm_type=2.0))
     )
-    for _ in progress:
+    for i in progress:
         batch = links[i: i + args.batch_size]
         transform_list = [[[], []] for _ in range(num_links)]
         for x in batch:
@@ -243,8 +247,8 @@ for t in args.num_epochs:
                 loss_equiv_cur, loss_barrier_cur = loss_fn(enc, x_list, args.barrier_type, args.hinge_thresh, args.cosine_sim, args.conformal_map)
                 loss_equiv.append(loss_equiv_cur)
                 loss_barrier.append(loss_barrier_cur)
-        loss_equiv = torch.mean(loss_equiv)
-        loss_barrier = torch.mean(loss_barrier)
+        loss_equiv = sum(loss_equiv)
+        loss_barrier = sum(loss_barrier)
         loss = loss_equiv + args.barrier_coef * loss_barrier
         opt.zero_grad()
         loss.backward()
