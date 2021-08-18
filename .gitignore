@@ -1,6 +1,7 @@
 Data/
 !Data/README.md
 !Data/dl.sh
+Model/*/data
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
