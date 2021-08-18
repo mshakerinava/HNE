@@ -277,7 +277,7 @@ for t in range(args.num_epochs):
     avg_loss_list.append(avg_loss)
     avg_loss_equiv_list.append(avg_loss_equiv)
     avg_loss_barrier_list.append(avg_loss_barrier)
-    print('\nEpoch %3d | Loss: %12g | Loss Equiv: %12g | Loss Barrier: %12g | Time: %6.1f sec' % (
+    print('Epoch %3d | Loss: %12g | Loss Equiv: %12g | Loss Barrier: %12g | Time: %6.1f sec' % (
         t + 1, avg_loss, avg_loss_equiv, avg_loss_barrier, time_end - time_start))
 
     # scheduler.step(avg_loss)
@@ -286,11 +286,12 @@ for t in range(args.num_epochs):
 os.makedirs('emb', exist_ok=True)
 OUTPUT_PATH = os.path.join('emb', '%s.dat' % TAG)
 with open(OUTPUT_PATH, 'w') as f:
-    f.write('[', datetime.now(), '] ', OUTPUT_PATH, '\n')
-    for i in range(num_nodes):
-        f.write(i, '\t')
-        for j in range(args.embedding_dim):
+    f.write('[%s] %s\n' % (str(datetime.now()), OUTPUT_PATH))
+    for i in tqdm(range(W.shape[0]), desc='writing to %s' % OUTPUT_PATH):
+        f.write('%d\t' % i)
+        for j in range(W.shape[1]):
             f.write('%f ' % W[i, j].item())
+        f.write('\n')
 
 print(FINISH_TEXT)
 
