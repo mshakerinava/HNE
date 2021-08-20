@@ -20,10 +20,11 @@ from utils import hash_args
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=1)
-parser.add_argument('--batch-size', type=int, default=64)
+parser.add_argument('--batch-size', type=int, default=128)
 parser.add_argument('--num-epochs', type=int, default=100)
 parser.add_argument('--embedding-dim', type=int, default=200)
-parser.add_argument('--weight-decay', type=float, default=1e-5)
+parser.add_argument('--momentum', type=float, default=0)
+parser.add_argument('--weight-decay', type=float, default=0)
 parser.add_argument('--hinge-thresh', type=float, default=5)
 parser.add_argument('--barrier-coef', type=float, default=1)
 parser.add_argument('--learning-rate', type=float, default=1e-3)
@@ -137,10 +138,11 @@ assert args.batch_size <= num_links
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Device:', DEVICE)
 
-W = torch.randn(num_nodes, args.embedding_dim, device=DEVICE, requires_grad=True) # todo: use embed
+emb = nn.Embedding(num_nodes, args.embedding_dim, sparse=True)
 
-opt = optim.Adam([W], lr=args.learning_rate, weight_decay=args.weight_decay)
-scheduler = optim.lr_scheduler.StepLR(opt, step_size=9999, gamma=0.5, verbose=False) # does nothing for now
+opt = optim.SGD(emb.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+scheduler = optim.lr_scheduler.StepLR(opt, step_size=25, gamma=0.5, verbose=False)
+
 
 #----------- loss function -----------#
 def cdist_mean(x1, x2, p=2.0, *args, **kwargs):
@@ -210,17 +212,16 @@ def loss_fn(enc, x_list, barrier_type, hinge_thresh, cosine_sim=False, conformal
 #-------------------------------------#
 
 
-def get_weights_norm(W, norm_type=2.0):
+def get_weights_norm(parameters, norm_type=2.0):
     with torch.no_grad():
-        return torch.linalg.norm(W, ord=norm_type, dim=1).mean().item()
+        return torch.norm(torch.stack([torch.norm(p, norm_type) for p in parameters]), norm_type).item()
 
 
-def get_grads_norm(W, norm_type=2.0):
+def get_grads_norm(parameters, norm_type=2.0):
     with torch.no_grad():
-        return torch.linalg.norm(W.grad, ord=norm_type, dim=1).mean().item()
+        return torch.norm(torch.stack([torch.norm(p.grad, norm_type) for p in parameters]), norm_type).item()
 
 
-enc = lambda x: W[x]
 os.makedirs('saved_models', exist_ok=True)
 
 avg_loss_list = []
@@ -236,7 +237,7 @@ for t in range(args.num_epochs):
     time_start = time.time()
     progress = tqdm(
         range(0, num_links - args.batch_size + 1, args.batch_size),
-        desc='Loss: None | Loss Equiv: None | Loss Barrier: None | L2 Weights: %12g | L2 Grads: 0' % (get_weights_norm(W, norm_type=2.0))
+        desc='Loss: None | Loss Equiv: None | Loss Barrier: None | L2 Weights: %12g | L2 Grads: 0' % (get_weights_norm(emb, norm_type=2.0))
     )
     for i in progress:
         batch = links[i: i + args.batch_size]
@@ -248,7 +249,7 @@ for t in range(args.num_epochs):
         loss_barrier = []
         for x_list in transform_list:
             if len(x_list[0]) >= 2:
-                loss_equiv_cur, loss_barrier_cur = loss_fn(enc, x_list, args.barrier_type, args.hinge_thresh, args.cosine_sim, args.conformal_map)
+                loss_equiv_cur, loss_barrier_cur = loss_fn(emb, x_list, args.barrier_type, args.hinge_thresh, args.cosine_sim, args.conformal_map)
                 loss_equiv.append(loss_equiv_cur)
                 loss_barrier.append(loss_barrier_cur)
         loss_equiv = sum(loss_equiv)
@@ -264,12 +265,12 @@ for t in range(args.num_epochs):
             loss_list[-1],
             loss_equiv_list[-1],
             loss_barrier_list[-1],
-            get_weights_norm(W, norm_type=2.0),
-            get_grads_norm(W, norm_type=2.0)
+            get_weights_norm(emb, norm_type=2.0),
+            get_grads_norm(emb, norm_type=2.0)
         ))
     time_end = time.time()
 
-    torch.save(W, os.path.join('saved_models', '%s__W.tar' % TAG))
+    torch.save(emb.state_dict(), os.path.join('saved_models', '%s__W.tar' % TAG))
 
     avg_loss = np.mean(loss_list)
     avg_loss_equiv = np.mean(loss_equiv_list)
@@ -286,6 +287,7 @@ for t in range(args.num_epochs):
 os.makedirs('emb', exist_ok=True)
 OUTPUT_PATH = os.path.join('emb', '%s.dat' % TAG)
 with open(OUTPUT_PATH, 'w') as f:
+    W = emb.weight
     f.write('[%s] %s\n' % (str(datetime.now()), OUTPUT_PATH))
     for i in tqdm(range(W.shape[0]), desc='writing to %s' % OUTPUT_PATH):
         f.write('%d\t' % i)
