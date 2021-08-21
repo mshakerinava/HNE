@@ -109,18 +109,18 @@ NODE_PATH = os.path.join(DATASET_PATH, 'node.dat')
 LINK_PATH = os.path.join(DATASET_PATH, 'link.dat')
 
 node_id_to_type = {}
-with tqdm.tqdm(desc='reading %s' % NODE_PATH, total=os.path.getsize(NODE_PATH)) as pbar:
+with tqdm(desc='reading %s' % NODE_PATH, total=os.path.getsize(NODE_PATH)) as pbar:
     with open(NODE_PATH, 'r') as f:
         for line in f:
-            pbar.update(len(l))
+            pbar.update(len(line))
             node_id, node_type = [int(x) for x in line.strip().split()]
             node_id_to_type[node_id] = node_type
 
 links = {}
-with tqdm.tqdm(desc='reading %s' % LINK_PATH, total=os.path.getsize(LINK_PATH)) as pbar:
+with tqdm(desc='reading %s' % LINK_PATH, total=os.path.getsize(LINK_PATH)) as pbar:
     with open(LINK_PATH, 'r') as f:
         for line in f:
-            pbar.update(len(l))
+            pbar.update(len(line))
             node_id_1, node_id_2, link_type = [int(x) for x in line.strip().split()]
             node_type_1 = node_id_to_type[node_id_1]
             node_type_2 = node_id_to_type[node_id_2]
@@ -141,7 +141,7 @@ batch_list = sum([[x] * max(1, len(links[x]) // args.batch_size) for x in links]
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Device:', DEVICE)
 
-emb = nn.Embedding(num_nodes, args.embedding_dim, sparse=True)
+emb = nn.Embedding(num_nodes, args.embedding_dim, sparse=True).to(DEVICE)
 
 opt = optim.SGD(emb.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
 scheduler = optim.lr_scheduler.StepLR(opt, step_size=25, gamma=0.5, verbose=False)
@@ -244,7 +244,7 @@ for t in range(args.num_epochs):
     time_start = time.time()
     progress = tqdm(
         range(len(batch_list)),
-        desc='Loss: None | Loss Equiv: None | Loss Barrier: None | L2 Weights: %12g | L2 Grads: 0' % (get_weights_norm(emb, norm_type=2.0))
+        desc='Loss: None | Loss Equiv: None | Loss Barrier: None | L2 Weights: %12g | L2 Grads: 0' % (get_weights_norm(emb.parameters(), norm_type=2.0))
     )
     for i in progress:
         link_type = batch_list[i]
@@ -266,8 +266,8 @@ for t in range(args.num_epochs):
             loss_list[-1],
             loss_equiv_list[-1],
             loss_barrier_list[-1],
-            get_weights_norm(emb, norm_type=2.0),
-            get_grads_norm(emb, norm_type=2.0)
+            get_weights_norm(emb.parameters(), norm_type=2.0),
+            get_grads_norm(emb.parameters(), norm_type=2.0)
         ))
     time_end = time.time()
 
