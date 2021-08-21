@@ -116,7 +116,7 @@ with tqdm.tqdm(desc='reading %s' % NODE_PATH, total=os.path.getsize(NODE_PATH)) 
             node_id, node_type = [int(x) for x in line.strip().split()]
             node_id_to_type[node_id] = node_type
 
-links = []
+links = {}
 with tqdm.tqdm(desc='reading %s' % LINK_PATH, total=os.path.getsize(LINK_PATH)) as pbar:
     with open(LINK_PATH, 'r') as f:
         for line in f:
@@ -126,14 +126,17 @@ with tqdm.tqdm(desc='reading %s' % LINK_PATH, total=os.path.getsize(LINK_PATH)) 
             node_type_2 = node_id_to_type[node_id_2]
             if node_type_1 > node_type_2:
                 node_id_1, node_id_2 = node_id_2, node_id_1
-            links.append([link_type, node_id_1, node_id_2])
+            if link_type not in links:
+                links[link_type] = []
+            links[link_type].append([node_id_1, node_id_2])
 
-links = np.array(links, dtype=int)
+for key, value in links.items():
+    links[key] = np.array(value, dtype=int)
 
 num_nodes = len(node_id_to_type)
-num_links = len(links)
+num_links = sum([len(x) for x in links.values()])
 
-assert args.batch_size <= num_links
+batch_list = sum([[x] * max(1, len(links[x]) // args.batch_size) for x in links])
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Device:', DEVICE)
@@ -229,31 +232,29 @@ avg_loss_equiv_list = []
 avg_loss_barrier_list = []
 
 for t in range(args.num_epochs):
-    np.random.shuffle(links)
+    for v in links.values():
+        np.random.shuffle(v)
+    np.random.shuffle(batch_list)
+    idx_list = [0] * len(links)
+
     loss_list = []
     loss_equiv_list = []
     loss_barrier_list = []
 
     time_start = time.time()
     progress = tqdm(
-        range(0, num_links - args.batch_size + 1, args.batch_size),
+        range(len(batch_list)),
         desc='Loss: None | Loss Equiv: None | Loss Barrier: None | L2 Weights: %12g | L2 Grads: 0' % (get_weights_norm(emb, norm_type=2.0))
     )
     for i in progress:
-        batch = links[i: i + args.batch_size]
-        transform_list = [[[], []] for _ in range(num_links)]
-        for x in batch:
-            transform_list[x[0]][0].append(x[1])
-            transform_list[x[0]][1].append(x[2])
-        loss_equiv = []
-        loss_barrier = []
-        for x_list in transform_list:
-            if len(x_list[0]) >= 2:
-                loss_equiv_cur, loss_barrier_cur = loss_fn(emb, x_list, args.barrier_type, args.hinge_thresh, args.cosine_sim, args.conformal_map)
-                loss_equiv.append(loss_equiv_cur)
-                loss_barrier.append(loss_barrier_cur)
-        loss_equiv = sum(loss_equiv)
-        loss_barrier = sum(loss_barrier)
+        link_type = batch_list[i]
+        idx = idx_list[link_type]
+        idx_ = min(len(links[link_type]), idx + args.batch_size)
+        idx_list[link_type] = idx_
+        batch = links[link_type][idx: idx_]
+
+        x_list = [batch[:, 0], batch[:, 1]]
+        loss_equiv, loss_barrier = loss_fn(emb, x_list, args.barrier_type, args.hinge_thresh, args.cosine_sim, args.conformal_map)
         loss = loss_equiv + args.barrier_coef * loss_barrier
         opt.zero_grad()
         loss.backward()
