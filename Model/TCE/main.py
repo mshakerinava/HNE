@@ -134,9 +134,9 @@ for key, value in links.items():
     links[key] = np.array(value, dtype=int)
 
 num_nodes = len(node_id_to_type)
-num_links = sum([len(x) for x in links.values()], [])
+num_links = sum([len(x) for x in links.values()])
 
-batch_list = sum([[x] * max(1, len(links[x]) // args.batch_size) for x in links])
+batch_list = sum([[x] * max(1, len(links[x]) // args.batch_size) for x in links], [])
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Device:', DEVICE)
