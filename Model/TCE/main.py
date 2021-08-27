@@ -33,9 +33,10 @@ parser.add_argument('--barrier-type', type=str, default='log', choices=['log', '
 parser.add_argument('--overwrite', action='store_true')
 parser.add_argument('--cosine-sim', action='store_true')
 parser.add_argument('--conformal-map', action='store_true')
+parser.add_argument('--no-sparse-grads', action='store_true')
 args = parser.parse_args()
 
-args_hash = hash_args(vars(args), no_hash=['dataset', 'seed'])
+args_hash = hash_args(vars(args), no_hash=['dataset', 'seed', 'no_sparse_grads', 'overwrite'])
 TAG = '%s__args-%s__seed-%02d' % (args.dataset, args_hash, args.seed)
 FINISH_TEXT = '** finished successfully **'
 
@@ -141,7 +142,7 @@ batch_list = sum([[x] * max(1, len(links[x]) // args.batch_size) for x in links]
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Device:', DEVICE)
 
-emb = nn.Embedding(num_nodes, args.embedding_dim, sparse=True).to(DEVICE)
+emb = nn.Embedding(num_nodes, args.embedding_dim, sparse=not args.no_sparse_grads).to(DEVICE)
 
 opt = optim.SGD(emb.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
 scheduler = optim.lr_scheduler.StepLR(opt, step_size=25, gamma=0.5, verbose=False)
