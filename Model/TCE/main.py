@@ -326,7 +326,7 @@ while t != args.num_epochs:
         'sched_state_dict': sched.state_dict(),
         't': t,
         'log_str': LOG_STR.getvalue()
-    }, checkpoint_file)
+    }, CHECKPOINT_FILE)
 
 EMB_PATH = 'emb'
 os.makedirs(EMB_PATH, exist_ok=True)
