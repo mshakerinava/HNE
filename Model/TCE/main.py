@@ -24,7 +24,6 @@ parser.add_argument('--batch-size', type=int, default=512)
 parser.add_argument('--num-epochs', type=int, default=50)
 parser.add_argument('--embedding-dim', type=int, default=50)
 parser.add_argument('--sched-step-size', type=int, default=20)
-parser.add_argument('--momentum', type=float, default=0)
 parser.add_argument('--sched-gamma', type=float, default=0.5)
 parser.add_argument('--weight-decay', type=float, default=0)
 parser.add_argument('--hinge-thresh', type=float, default=5)
@@ -151,7 +150,7 @@ emb = nn.Embedding(num_nodes, args.embedding_dim, sparse=args.sparse_grads).to(D
 dropout_layer = nn.Dropout(p=args.dropout_rate)
 emb_dropout = nn.Sequential(emb, dropout_layer)
 
-opt = eval('optim.%s' % args.optimizer)(emb.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+opt = eval('optim.%s' % args.optimizer)(emb.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 sched = optim.lr_scheduler.StepLR(opt, step_size=args.sched_step_size, gamma=args.sched_gamma)
 
 
