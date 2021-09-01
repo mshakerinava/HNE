@@ -20,23 +20,27 @@ from utils import hash_args
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=1)
-parser.add_argument('--batch-size', type=int, default=128)
-parser.add_argument('--num-epochs', type=int, default=100)
-parser.add_argument('--embedding-dim', type=int, default=200)
+parser.add_argument('--batch-size', type=int, default=512)
+parser.add_argument('--num-epochs', type=int, default=50)
+parser.add_argument('--embedding-dim', type=int, default=50)
+parser.add_argument('--sched-step-size', type=int, default=20)
 parser.add_argument('--momentum', type=float, default=0)
+parser.add_argument('--sched-gamma', type=float, default=0.5)
 parser.add_argument('--weight-decay', type=float, default=0)
 parser.add_argument('--hinge-thresh', type=float, default=5)
 parser.add_argument('--barrier-coef', type=float, default=1)
+parser.add_argument('--dropout-rate', type=float, default=0)
 parser.add_argument('--learning-rate', type=float, default=1e-3)
 parser.add_argument('--dataset', type=str, required=True, choices=['DBLP', 'PubMed', 'Freebase', 'Yelp'])
+parser.add_argument('--optimizer', type=str, default='Adam')
 parser.add_argument('--barrier-type', type=str, default='log', choices=['log', 'inv', 'id'])
 parser.add_argument('--overwrite', action='store_true')
 parser.add_argument('--cosine-sim', action='store_true')
 parser.add_argument('--conformal-map', action='store_true')
-parser.add_argument('--no-sparse-grads', action='store_true')
+parser.add_argument('--sparse-grads', action='store_true')
 args = parser.parse_args()
 
-args_hash = hash_args(vars(args), no_hash=['dataset', 'seed', 'no_sparse_grads', 'overwrite'])
+args_hash = hash_args(vars(args), no_hash=['dataset', 'seed', 'sparse_grads', 'overwrite'])
 TAG = '%s__args-%s__seed-%02d' % (args.dataset, args_hash, args.seed)
 FINISH_TEXT = '** finished successfully **'
 
@@ -48,8 +52,9 @@ try:
 except:
     pass
 
-os.makedirs('logs', exist_ok=True)
-LOG_PATH = os.path.join('logs', TAG + '.txt')
+LOGS_PATH = 'logs'
+os.makedirs(LOGS_PATH, exist_ok=True)
+LOG_PATH = os.path.join(LOGS_PATH, TAG + '.txt')
 
 abort = False
 try:
@@ -137,15 +142,17 @@ for key, value in links.items():
 num_nodes = len(node_id_to_type)
 num_links = sum([len(x) for x in links.values()])
 
-batch_list = sum([[x] * max(1, len(links[x]) // args.batch_size) for x in links], [])
+batches = sum([[x] * max(1, len(links[x]) // args.batch_size) for x in links], [])
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Device:', DEVICE)
 
-emb = nn.Embedding(num_nodes, args.embedding_dim, sparse=not args.no_sparse_grads).to(DEVICE)
+emb = nn.Embedding(num_nodes, args.embedding_dim, sparse=args.sparse_grads).to(DEVICE)
+dropout_layer = nn.Dropout(p=args.dropout_rate)
+emb_dropout = nn.Sequential(emb, dropout_layer)
 
-opt = optim.SGD(emb.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
-scheduler = optim.lr_scheduler.StepLR(opt, step_size=25, gamma=0.5, verbose=False)
+opt = eval('optim.%s' % args.optimizer)(emb.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+sched = optim.lr_scheduler.StepLR(opt, step_size=args.sched_step_size, gamma=args.sched_gamma)
 
 
 #----------- loss function -----------#
@@ -226,16 +233,44 @@ def get_grads_norm(parameters, norm_type=2.0):
         return torch.norm(torch.stack([torch.norm(p.grad, norm_type) for p in parameters]), norm_type).item()
 
 
-os.makedirs('saved_models', exist_ok=True)
+CHECKPOINTS_PATH = 'checkpoints'
+os.makedirs(CHECKPOINTS_PATH, exist_ok=True)
+
+CHECKPOINT_FILE = os.path.join(CHECKPOINTS_PATH, '%s.tar' % TAG)
+if os.path.isfile(CHECKPOINT_FILE):
+    checkpoint = torch.load(CHECKPOINT_FILE)
+    emb.load_state_dict(checkpoint['emb_state_dict'])
+    opt.load_state_dict(checkpoint['opt_state_dict'])
+    sched.load_state_dict(checkpoint['sched_state_dict'])
+    t = checkpoint['t']
+    log_lines = checkpoint['log_str'].split('\n')
+    for (i, line) in enumerate(log_lines):
+        if 'Training started' in line:
+            print('\n'.join(log_lines[i:]), end='')
+            break
+    if t != args.num_epochs:
+        print('[%s] Training resumed' % datetime.now())
+else:
+    print('[%s] Training started' % datetime.now())
+    print('Training for %d epochs...' % args.num_epochs)
+    t = 0
+
+MODELS_PATH = 'saved_models'
+os.makedirs(MODELS_PATH, exist_ok=True)
 
 avg_loss_list = []
 avg_loss_equiv_list = []
 avg_loss_barrier_list = []
 
-for t in range(args.num_epochs):
-    for v in links.values():
-        np.random.shuffle(v)
-    np.random.shuffle(batch_list)
+while t != args.num_epochs:
+    set_seed(1000 * (t + 1) + args.seed)
+    links_idx = {}
+    for k, v in links.items():
+        links_idx[k] = np.arange(len(v))
+        np.random.shuffle(links_idx[k])
+    batches_idx = np.arange(len(batches))
+    np.random.shuffle(batches_idx)
+
     idx_list = [0] * len(links)
 
     loss_list = []
@@ -244,18 +279,18 @@ for t in range(args.num_epochs):
 
     time_start = time.time()
     progress = tqdm(
-        range(len(batch_list)),
+        range(len(batches)),
         desc='Loss: None | Loss Equiv: None | Loss Barrier: None | L2 Weights: %12g | L2 Grads: 0' % (get_weights_norm(emb.parameters(), norm_type=2.0))
     )
     for i in progress:
-        link_type = batch_list[i]
+        link_type = batches[batches_idx[i]]
         idx = idx_list[link_type]
         idx_ = min(len(links[link_type]), idx + args.batch_size)
         idx_list[link_type] = idx_
-        batch = links[link_type][idx: idx_]
+        batch = links[link_type][links_idx[link_type][idx: idx_]]
 
         x_list = [batch[:, 0], batch[:, 1]]
-        loss_equiv, loss_barrier = loss_fn(emb, x_list, args.barrier_type, args.hinge_thresh, args.cosine_sim, args.conformal_map)
+        loss_equiv, loss_barrier = loss_fn(emb_dropout, x_list, args.barrier_type, args.hinge_thresh, args.cosine_sim, args.conformal_map)
         loss = loss_equiv + args.barrier_coef * loss_barrier
         opt.zero_grad()
         loss.backward()
@@ -272,7 +307,7 @@ for t in range(args.num_epochs):
         ))
     time_end = time.time()
 
-    torch.save(emb.state_dict(), os.path.join('saved_models', '%s__W.tar' % TAG))
+    torch.save(emb.state_dict(), os.path.join(MODELS_PATH, '%s__W.tar' % TAG))
 
     avg_loss = np.mean(loss_list)
     avg_loss_equiv = np.mean(loss_equiv_list)
@@ -283,11 +318,20 @@ for t in range(args.num_epochs):
     print('Epoch %3d | Loss: %12g | Loss Equiv: %12g | Loss Barrier: %12g | Time: %6.1f sec' % (
         t + 1, avg_loss, avg_loss_equiv, avg_loss_barrier, time_end - time_start))
 
-    # scheduler.step(avg_loss)
-    scheduler.step()
+    # sched.step(avg_loss)
+    sched.step()
+    t += 1
+    torch.save({
+        'emb_state_dict': emb.state_dict(),
+        'opt_state_dict': opt.state_dict(),
+        'sched_state_dict': sched.state_dict(),
+        't': t,
+        'log_str': LOG_STR.getvalue()
+    }, checkpoint_file)
 
-os.makedirs('emb', exist_ok=True)
-OUTPUT_PATH = os.path.join('emb', '%s.dat' % TAG)
+EMB_PATH = 'emb'
+os.makedirs(EMB_PATH, exist_ok=True)
+OUTPUT_PATH = os.path.join(EMB_PATH, '%s.dat' % TAG)
 with open(OUTPUT_PATH, 'w') as f:
     W = emb.weight
     f.write('[%s] %s\n' % (str(datetime.now()), OUTPUT_PATH))
