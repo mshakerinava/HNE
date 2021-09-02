@@ -60,7 +60,7 @@ LOG_PATH = os.path.join(LOGS_PATH, TAG + '.txt')
 abort = False
 try:
     if not args.overwrite and subprocess.check_output(['tail', '-n', '1', LOG_PATH]).decode('utf-8').strip() == FINISH_TEXT:
-        print('ABORT: experiment has already been performed')
+        print('ABORT: experiment %s has already been performed' % TAG)
         abort = True
 except:
     pass
