@@ -16,6 +16,8 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 from tqdm import tqdm
 from utils import hash_args
+from link_prediction import lp_evaluate
+from node_classification import nc_evaluate
 
 
 parser = argparse.ArgumentParser()
@@ -328,17 +330,39 @@ while t != args.num_epochs:
         'log_str': LOG_STR.getvalue()
     }, CHECKPOINT_FILE)
 
-EMB_PATH = 'emb'
-os.makedirs(EMB_PATH, exist_ok=True)
-OUTPUT_PATH = os.path.join(EMB_PATH, '%s.dat' % TAG)
-with open(OUTPUT_PATH, 'w') as f:
-    W = emb.weight
-    f.write('[%s] %s\n' % (str(datetime.now()), OUTPUT_PATH))
-    for i in tqdm(range(W.shape[0]), desc='writing to %s' % OUTPUT_PATH):
-        f.write('%d\t' % i)
-        for j in range(W.shape[1]):
-            f.write('%f ' % W[i, j].item())
-        f.write('\n')
+print('[%s] Training finished' % datetime.now())
+
+print('[%s] Evaluation started' % datetime.now())
+emb_np = emb.detach().to('cpu').numpy()
+emb_dict = {str(i): emb_np[i] for i in range(len(emb_np))}
+DATA_PATH = '../../Data'
+
+LABEL_FILE_PATH = os.path.join(DATA_PATH, args.dataset, 'label.dat')
+LABEL_TEST_PATH = os.path.join(DATA_PATH, args.dataset, 'label.dat.test')
+scores = nc_evaluate(args.dataset, args.supervised, LABEL_FILE_PATH, LABEL_TEST_PATH, emb_dict)
+print('----- Node Classification -----')
+print('Macro-F1/Micro-F1: %5.2f/%5.2f' % (100 * scores[0], 100 * scores[1]))
+print('-------------------------------')
+
+LINK_TEST_PATH = os.path.join(DATA_PATH, args.dataset, 'link.dat.test')
+scores = lp_evaluate(LINK_TEST_PATH, emb_dict)
+print('------- Link Prediction -------')
+print('AUC/MRR: %5.2f/%5.2f' % (100 * scores[0], 100 * scores[1]))
+print('-------------------------------')
+
+print('[%s] Evaluation finished' % datetime.now())
+
+# EMB_PATH = 'emb'
+# os.makedirs(EMB_PATH, exist_ok=True)
+# OUTPUT_PATH = os.path.join(EMB_PATH, '%s.dat' % TAG)
+# with open(OUTPUT_PATH, 'w') as f:
+#     W = emb.weight
+#     f.write('[%s] %s\n' % (str(datetime.now()), OUTPUT_PATH))
+#     for i in tqdm(range(W.shape[0]), desc='writing to %s' % OUTPUT_PATH):
+#         f.write('%d\t' % i)
+#         for j in range(W.shape[1]):
+#             f.write('%f ' % W[i, j].item())
+#         f.write('\n')
 
 print(FINISH_TEXT)
 
