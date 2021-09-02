@@ -322,6 +322,8 @@ while t != args.num_epochs:
     # sched.step(avg_loss)
     sched.step()
     t += 1
+    if t == args.num_epochs:
+        print('[%s] Training finished' % datetime.now())
     torch.save({
         'emb_state_dict': emb.state_dict(),
         'opt_state_dict': opt.state_dict(),
@@ -330,16 +332,15 @@ while t != args.num_epochs:
         'log_str': LOG_STR.getvalue()
     }, CHECKPOINT_FILE)
 
-print('[%s] Training finished' % datetime.now())
-
 print('[%s] Evaluation started' % datetime.now())
-emb_np = emb.detach().to('cpu').numpy()
+
+emb_np = emb.weight.detach().to('cpu').numpy()
 emb_dict = {str(i): emb_np[i] for i in range(len(emb_np))}
 DATA_PATH = '../../Data'
 
 LABEL_FILE_PATH = os.path.join(DATA_PATH, args.dataset, 'label.dat')
 LABEL_TEST_PATH = os.path.join(DATA_PATH, args.dataset, 'label.dat.test')
-scores = nc_evaluate(args.dataset, args.supervised, LABEL_FILE_PATH, LABEL_TEST_PATH, emb_dict)
+scores = nc_evaluate(args.dataset, 'False', LABEL_FILE_PATH, LABEL_TEST_PATH, emb_dict)
 print('----- Node Classification -----')
 print('Macro-F1/Micro-F1: %5.2f/%5.2f' % (100 * scores[0], 100 * scores[1]))
 print('-------------------------------')

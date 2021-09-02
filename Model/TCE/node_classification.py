@@ -15,7 +15,6 @@ warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
 
 def nc_evaluate(dataset, supervised, label_file_path, label_test_path, emb_dict):    
-    
     if supervised=='True':
         if dataset=='Yelp':
             return semisupervised_single_class_multi_label(label_file_path, label_test_path, emb_dict)
@@ -26,10 +25,10 @@ def nc_evaluate(dataset, supervised, label_file_path, label_test_path, emb_dict)
             return unsupervised_single_class_multi_label(label_file_path, label_test_path, emb_dict)
         elif dataset=='DBLP' or dataset=='Freebase' or dataset=='PubMed':
             return unsupervised_single_class_single_label(label_file_path, label_test_path, emb_dict)
+    assert False
 
 
 def semisupervised_single_class_single_label(label_file_path, label_test_path, emb_dict):
-    
     train_labels, train_embeddings = [], []
     with open(label_file_path,'r') as label_file:
         for line in label_file:

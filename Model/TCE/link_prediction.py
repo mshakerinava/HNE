@@ -23,7 +23,7 @@ def cross_validation(edge_embs, edge_labels):
     skf = KFold(n_splits=5, shuffle=True, random_state=seed)
     for fold, (train_idx, test_idx) in enumerate(skf.split(np.zeros((num_nodes,1)), np.zeros(num_nodes))):
         
-        print(f'[{datetime.now()}] Evaluation Fold #{fold}')
+        print(f'[{datetime.now()}] Evaluation Fold #{fold + 1}')
         train_edge_embs, test_edge_embs, train_edge_labels, test_edge_labels = [], [], [], []
         for each in train_idx:
             train_edge_embs.append(edge_embs[seed_nodes[each]])
